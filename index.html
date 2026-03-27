@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8" />
 
-  <!-- 🔥 FIX ZA TELEFON -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
 
-  <title>Moja navigacija</title>
+  <title>Nav</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
     html, body {
-      height: 100%;
       margin: 0;
-      padding: 0;
+      height: 100%;
       background: black;
       overflow: hidden;
       font-family: Arial;
@@ -26,41 +26,42 @@
       width: 100%;
     }
 
-    #panel {
+    #ui {
       position: absolute;
       top: 10px;
       left: 10px;
       right: 10px;
       z-index: 999;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.75);
+      color: white;
       padding: 10px;
       border-radius: 10px;
-      color: white;
     }
 
     input, button {
       padding: 10px;
       margin: 5px;
-      width: 60%;
     }
 
-    button {
-      width: auto;
+    #info {
+      margin-top: 8px;
+      font-size: 14px;
+      opacity: 0.9;
     }
 
-    .car-icon {
-      font-size: 24px;
-      text-align: center;
+    .car {
+      font-size: 22px;
     }
   </style>
 </head>
 
 <body>
 
-<div id="panel">
-  <input id="dest" placeholder="Unesi adresu" />
-  <button onclick="route()">Kreni</button>
-  <button onclick="resetMap()">Reset</button>
+<div id="ui">
+  <input id="dest" placeholder="Destinacija" />
+  <button onclick="start()">Start</button>
+  <button onclick="reset()">Reset</button>
+  <div id="info">Spreman</div>
 </div>
 
 <div id="map"></div>
@@ -73,87 +74,71 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   attribution: ''
 }).addTo(map);
 
-// GPS
-map.locate({ watch: true, setView: true, maxZoom: 18 });
-
-map.on('locationerror', function() {
-  alert("Dozvoli lokaciju u browseru");
-});
-
-let userLatLng;
-let routeLayer;
-let carMarker;
+let user;
+let routeLine;
 let routeCoords = [];
+let car;
 
 const carIcon = L.divIcon({
-  className: "car-icon",
+  className: "car",
   html: "🚗",
   iconSize: [30, 30]
 });
 
-map.on('locationfound', function(e) {
-  userLatLng = e.latlng;
+// GPS
+map.locate({ watch: true, setView: true });
 
-  if (!carMarker) {
-    carMarker = L.marker(userLatLng, { icon: carIcon }).addTo(map);
+map.on("locationfound", e => {
+  user = e.latlng;
+
+  if (!car) {
+    car = L.marker(user, { icon: carIcon }).addTo(map);
   } else {
-    carMarker.setLatLng(userLatLng);
+    car.setLatLng(user);
   }
 
-  routeCoords.push(userLatLng);
-
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
+  // prati auto
+  if (routeCoords.length > 0) {
+    map.panTo(user);
   }
-
-  routeLayer = L.polyline(routeCoords, {
-    color: "white",
-    weight: 4
-  }).addTo(map);
 });
 
 // ROUTE
-async function route() {
-  const place = document.getElementById("dest").value;
+async function start() {
+  const dest = document.getElementById("dest").value;
+  if (!user) return;
 
-  if (!userLatLng) {
-    alert("Čekaj GPS lokaciju");
-    return;
-  }
+  document.getElementById("info").innerText = "Tražim rutu...";
 
   const geo = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&q=${place}`
+    `https://nominatim.openstreetmap.org/search?format=json&q=${dest}`
   );
-
-  const geoData = await geo.json();
-  const dest = geoData[0];
+  const g = await geo.json();
+  const d = g[0];
 
   const res = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${userLatLng.lng},${userLatLng.lat};${dest.lon},${dest.lat}?overview=full&geometries=geojson`
+    `https://router.project-osrm.org/route/v1/driving/${user.lng},${user.lat};${d.lon},${d.lat}?overview=full&geometries=geojson`
   );
 
   const data = await res.json();
-  const routeLine = data.routes[0].geometry;
+  const route = data.routes[0].geometry;
 
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-  }
+  if (routeLine) map.removeLayer(routeLine);
 
-  routeCoords = [];
-
-  routeLayer = L.geoJSON(routeLine, {
+  routeLine = L.geoJSON(route, {
     style: { color: "white", weight: 4 }
   }).addTo(map);
+
+  routeCoords = route.coordinates;
+
+  document.getElementById("info").innerText = "Vozi pravo";
 }
 
 // RESET
-function resetMap() {
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    routeLayer = null;
-  }
-
+function reset() {
+  if (routeLine) map.removeLayer(routeLine);
   routeCoords = [];
+  document.getElementById("info").innerText = "Resetovano";
 }
 
 </script>
