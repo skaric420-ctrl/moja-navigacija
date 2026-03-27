@@ -5,8 +5,13 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
 
-<title>Mini Nav Pro</title>
+<title>Mini Nav</title>
+
+<!-- PWA manifest -->
+<link rel="manifest" href="manifest.json">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -89,21 +94,13 @@ let speed = 0;
 let lastPos = null;
 let lastTime = null;
 
-let heading = 0;
 let speedLimit = 50;
-
-const carIcon = L.divIcon({
-  className: "",
-  html: "🚗",
-  iconSize: [20,20]
-});
 
 // GPS
 map.locate({watch:true, setView:true});
 
 map.on("locationfound", e => {
   user = e.latlng;
-  heading = e.heading || heading;
 
   const now = Date.now();
 
@@ -115,21 +112,14 @@ map.on("locationfound", e => {
   lastTime = now;
 
   if (!car) {
-    car = L.marker(user, {icon: carIcon}).addTo(map);
+    car = L.marker(user).addTo(map);
   } else {
     car.setLatLng(user);
   }
 
-  // auto rotate map (car view)
-  map.setView(user, map.getZoom(), {
-    animate: true
-  });
+  map.panTo(user);
 
   updateUI();
-
-  if (watchPath.length) {
-    checkLimit(user);
-  }
 });
 
 // ROUTE
@@ -159,43 +149,6 @@ async function startRoute() {
     color:"white",
     weight:4
   }).addTo(map);
-
-  updateUI();
-}
-
-// SPEED LIMIT fetch (Overpass API)
-async function fetchSpeedLimit(lat, lng) {
-  try {
-    const query = `
-      [out:json];
-      way(around:20,${lat},${lng})["maxspeed"];
-      out tags;
-    `;
-
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: query
-    });
-
-    const data = await res.json();
-
-    if (data.elements.length > 0) {
-      const tags = data.elements[0].tags;
-      if (tags.maxspeed) {
-        speedLimit = parseInt(tags.maxspeed);
-        return;
-      }
-    }
-
-    speedLimit = 50; // default
-  } catch {
-    speedLimit = 50;
-  }
-}
-
-// CHECK SPEED + LIMIT
-function checkLimit(pos) {
-  fetchSpeedLimit(pos.lat, pos.lng);
 }
 
 // RESET
