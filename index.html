@@ -2,6 +2,10 @@
 <html>
 <head>
   <meta charset="utf-8" />
+
+  <!-- 🔥 FIX ZA TELEFON -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>Moja navigacija</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -47,7 +51,6 @@
     .car-icon {
       font-size: 24px;
       text-align: center;
-      transition: transform 0.2s linear;
     }
   </style>
 </head>
@@ -70,10 +73,14 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   attribution: ''
 }).addTo(map);
 
+// GPS
 map.locate({ watch: true, setView: true, maxZoom: 18 });
 
+map.on('locationerror', function() {
+  alert("Dozvoli lokaciju u browseru");
+});
+
 let userLatLng;
-let lastLatLng = null;
 let routeLayer;
 let carMarker;
 let routeCoords = [];
@@ -84,47 +91,14 @@ const carIcon = L.divIcon({
   iconSize: [30, 30]
 });
 
-// računanje ugla (smer kretanja)
-function getAngle(lat1, lng1, lat2, lng2) {
-  const dLon = (lng2 - lng1);
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) -
-    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-
-  let brng = Math.atan2(y, x);
-  brng = brng * 180 / Math.PI;
-  return (brng + 360) % 360;
-}
-
 map.on('locationfound', function(e) {
   userLatLng = e.latlng;
 
   if (!carMarker) {
     carMarker = L.marker(userLatLng, { icon: carIcon }).addTo(map);
+  } else {
+    carMarker.setLatLng(userLatLng);
   }
-
-  // rotacija auta
-  if (lastLatLng) {
-    const angle = getAngle(
-      lastLatLng.lat,
-      lastLatLng.lng,
-      userLatLng.lat,
-      userLatLng.lng
-    );
-
-    const icon = carMarker.getElement();
-    if (icon) {
-      icon.style.transform = `rotate(${angle}deg)`;
-    }
-  }
-
-  lastLatLng = userLatLng;
-
-  carMarker.setLatLng(userLatLng);
-
-  // kamera prati auto (uvek “gledaš pravo”)
-  map.setView(userLatLng, map.getZoom(), { animate: true });
 
   routeCoords.push(userLatLng);
 
@@ -159,7 +133,6 @@ async function route() {
   );
 
   const data = await res.json();
-
   const routeLine = data.routes[0].geometry;
 
   if (routeLayer) {
