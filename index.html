@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Moja navigacija</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: black;
+      overflow: hidden;
+      font-family: Arial;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+
+    #panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      z-index: 999;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 10px;
+      color: white;
+    }
+
+    input, button {
+      padding: 10px;
+      margin: 5px;
+      width: 60%;
+    }
+
+    button {
+      width: auto;
+    }
+
+    .car-icon {
+      font-size: 24px;
+      text-align: center;
+      transition: transform 0.2s linear;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="panel">
+  <input id="dest" placeholder="Unesi adresu" />
+  <button onclick="route()">Kreni</button>
+  <button onclick="resetMap()">Reset</button>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+const map = L.map('map').setView([44.81, 20.46], 13);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: ''
+}).addTo(map);
+
+map.locate({ watch: true, setView: true, maxZoom: 18 });
+
+let userLatLng;
+let lastLatLng = null;
+let routeLayer;
+let carMarker;
+let routeCoords = [];
+
+const carIcon = L.divIcon({
+  className: "car-icon",
+  html: "🚗",
+  iconSize: [30, 30]
+});
+
+// računanje ugla (smer kretanja)
+function getAngle(lat1, lng1, lat2, lng2) {
+  const dLon = (lng2 - lng1);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  let brng = Math.atan2(y, x);
+  brng = brng * 180 / Math.PI;
+  return (brng + 360) % 360;
+}
+
+map.on('locationfound', function(e) {
+  userLatLng = e.latlng;
+
+  if (!carMarker) {
+    carMarker = L.marker(userLatLng, { icon: carIcon }).addTo(map);
+  }
+
+  // rotacija auta
+  if (lastLatLng) {
+    const angle = getAngle(
+      lastLatLng.lat,
+      lastLatLng.lng,
+      userLatLng.lat,
+      userLatLng.lng
+    );
+
+    const icon = carMarker.getElement();
+    if (icon) {
+      icon.style.transform = `rotate(${angle}deg)`;
+    }
+  }
+
+  lastLatLng = userLatLng;
+
+  carMarker.setLatLng(userLatLng);
+
+  // kamera prati auto (uvek “gledaš pravo”)
+  map.setView(userLatLng, map.getZoom(), { animate: true });
+
+  routeCoords.push(userLatLng);
+
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+  }
+
+  routeLayer = L.polyline(routeCoords, {
+    color: "white",
+    weight: 4
+  }).addTo(map);
+});
+
+// ROUTE
+async function route() {
+  const place = document.getElementById("dest").value;
+
+  if (!userLatLng) {
+    alert("Čekaj GPS lokaciju");
+    return;
+  }
+
+  const geo = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=json&q=${place}`
+  );
+
+  const geoData = await geo.json();
+  const dest = geoData[0];
+
+  const res = await fetch(
+    `https://router.project-osrm.org/route/v1/driving/${userLatLng.lng},${userLatLng.lat};${dest.lon},${dest.lat}?overview=full&geometries=geojson`
+  );
+
+  const data = await res.json();
+
+  const routeLine = data.routes[0].geometry;
+
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+  }
+
+  routeCoords = [];
+
+  routeLayer = L.geoJSON(routeLine, {
+    style: { color: "white", weight: 4 }
+  }).addTo(map);
+}
+
+// RESET
+function resetMap() {
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+    routeLayer = null;
+  }
+
+  routeCoords = [];
+}
+
+</script>
+
+</body>
+</html>
