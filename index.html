@@ -10,7 +10,6 @@
 
 <title>Mini Nav</title>
 
-<!-- PWA manifest -->
 <link rel="manifest" href="manifest.json">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -96,6 +95,13 @@ let lastTime = null;
 
 let speedLimit = 50;
 
+// 🚗 ICON
+const carIcon = L.divIcon({
+  className: "",
+  html: "🚗",
+  iconSize: [25, 25]
+});
+
 // GPS
 map.locate({watch:true, setView:true});
 
@@ -111,8 +117,9 @@ map.on("locationfound", e => {
   lastPos = user;
   lastTime = now;
 
+  // 🚗 use custom icon here
   if (!car) {
-    car = L.marker(user).addTo(map);
+    car = L.marker(user, { icon: carIcon }).addTo(map);
   } else {
     car.setLatLng(user);
   }
@@ -127,11 +134,13 @@ async function startRoute() {
   const dest = document.getElementById("dest").value;
   if (!user) return;
 
-  const g = await fetch(
+  document.getElementById("info").innerText = "Tražim rutu...";
+
+  const geo = await fetch(
     `https://nominatim.openstreetmap.org/search?format=json&q=${dest}`
   );
 
-  const data = await g.json();
+  const data = await geo.json();
   const d = data[0];
 
   const r = await fetch(
@@ -149,6 +158,8 @@ async function startRoute() {
     color:"white",
     weight:4
   }).addTo(map);
+
+  document.getElementById("info").innerText = "Vozi";
 }
 
 // RESET
@@ -167,14 +178,14 @@ function updateUI() {
     `Limit: ${speedLimit} km/h`;
 }
 
-// SPEED calc
+// SPEED
 function calcSpeed(a,b,ms){
   const km = distance(a,b);
   const h = ms / 3600000;
   return km / h;
 }
 
-// DISTANCE km
+// DISTANCE
 function distance(a,b){
   const R = 6371;
   const dLat = (b.lat-a.lat)*Math.PI/180;
