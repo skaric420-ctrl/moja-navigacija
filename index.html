@@ -1,67 +1,73 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
+<meta charset="utf-8"/>
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
 
-  <title>Nav</title>
+<title>Mini Nav Pro</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <style>
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: black;
-      overflow: hidden;
-      font-family: Arial;
-    }
+<style>
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: Arial;
+}
 
-    #map {
-      height: 100vh;
-      width: 100%;
-    }
+#map {
+  height: 100vh;
+  width: 100%;
+}
 
-    #ui {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      z-index: 999;
-      background: rgba(0,0,0,0.75);
-      color: white;
-      padding: 10px;
-      border-radius: 10px;
-    }
+#ui {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 999;
+  background: rgba(0,0,0,0.75);
+  color: white;
+  padding: 10px;
+  border-radius: 10px;
+}
 
-    input, button {
-      padding: 10px;
-      margin: 5px;
-    }
+input, button {
+  padding: 10px;
+  margin: 5px;
+}
 
-    #info {
-      margin-top: 8px;
-      font-size: 14px;
-      opacity: 0.9;
-    }
+#info {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
 
-    .car {
-      font-size: 22px;
-    }
-  </style>
+.big {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.warn {
+  color: red;
+  font-weight: bold;
+}
+</style>
 </head>
 
 <body>
 
 <div id="ui">
-  <input id="dest" placeholder="Destinacija" />
-  <button onclick="start()">Start</button>
+  <input id="dest" placeholder="Destinacija"/>
+  <button onclick="startRoute()">Start</button>
   <button onclick="reset()">Reset</button>
-  <div id="info">Spreman</div>
+
+  <div id="info">Spremno</div>
 </div>
 
 <div id="map"></div>
@@ -76,69 +82,159 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 
 let user;
 let routeLine;
-let routeCoords = [];
+let watchPath = [];
 let car;
 
+let speed = 0;
+let lastPos = null;
+let lastTime = null;
+
+let heading = 0;
+let speedLimit = 50;
+
 const carIcon = L.divIcon({
-  className: "car",
+  className: "",
   html: "🚗",
-  iconSize: [30, 30]
+  iconSize: [20,20]
 });
 
 // GPS
-map.locate({ watch: true, setView: true });
+map.locate({watch:true, setView:true});
 
 map.on("locationfound", e => {
   user = e.latlng;
+  heading = e.heading || heading;
+
+  const now = Date.now();
+
+  if (lastPos && lastTime) {
+    speed = calcSpeed(user, lastPos, now - lastTime);
+  }
+
+  lastPos = user;
+  lastTime = now;
 
   if (!car) {
-    car = L.marker(user, { icon: carIcon }).addTo(map);
+    car = L.marker(user, {icon: carIcon}).addTo(map);
   } else {
     car.setLatLng(user);
   }
 
-  // prati auto
-  if (routeCoords.length > 0) {
-    map.panTo(user);
+  // auto rotate map (car view)
+  map.setView(user, map.getZoom(), {
+    animate: true
+  });
+
+  updateUI();
+
+  if (watchPath.length) {
+    checkLimit(user);
   }
 });
 
 // ROUTE
-async function start() {
+async function startRoute() {
   const dest = document.getElementById("dest").value;
   if (!user) return;
 
-  document.getElementById("info").innerText = "Tražim rutu...";
-
-  const geo = await fetch(
+  const g = await fetch(
     `https://nominatim.openstreetmap.org/search?format=json&q=${dest}`
   );
-  const g = await geo.json();
-  const d = g[0];
 
-  const res = await fetch(
+  const data = await g.json();
+  const d = data[0];
+
+  const r = await fetch(
     `https://router.project-osrm.org/route/v1/driving/${user.lng},${user.lat};${d.lon},${d.lat}?overview=full&geometries=geojson`
   );
 
-  const data = await res.json();
-  const route = data.routes[0].geometry;
+  const res = await r.json();
+  const coords = res.routes[0].geometry.coordinates;
+
+  watchPath = coords.map(c => ({lat:c[1], lng:c[0]}));
 
   if (routeLine) map.removeLayer(routeLine);
 
-  routeLine = L.geoJSON(route, {
-    style: { color: "white", weight: 4 }
+  routeLine = L.polyline(watchPath, {
+    color:"white",
+    weight:4
   }).addTo(map);
 
-  routeCoords = route.coordinates;
+  updateUI();
+}
 
-  document.getElementById("info").innerText = "Vozi pravo";
+// SPEED LIMIT fetch (Overpass API)
+async function fetchSpeedLimit(lat, lng) {
+  try {
+    const query = `
+      [out:json];
+      way(around:20,${lat},${lng})["maxspeed"];
+      out tags;
+    `;
+
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      body: query
+    });
+
+    const data = await res.json();
+
+    if (data.elements.length > 0) {
+      const tags = data.elements[0].tags;
+      if (tags.maxspeed) {
+        speedLimit = parseInt(tags.maxspeed);
+        return;
+      }
+    }
+
+    speedLimit = 50; // default
+  } catch {
+    speedLimit = 50;
+  }
+}
+
+// CHECK SPEED + LIMIT
+function checkLimit(pos) {
+  fetchSpeedLimit(pos.lat, pos.lng);
 }
 
 // RESET
 function reset() {
   if (routeLine) map.removeLayer(routeLine);
-  routeCoords = [];
-  document.getElementById("info").innerText = "Resetovano";
+  watchPath = [];
+  document.getElementById("info").innerText = "Reset";
+}
+
+// UI
+function updateUI() {
+  const over = speed > speedLimit;
+
+  document.getElementById("info").innerHTML =
+    `<div class="big ${over ? "warn" : ""}">🚗 ${speed.toFixed(0)} km/h</div>` +
+    `Limit: ${speedLimit} km/h`;
+}
+
+// SPEED calc
+function calcSpeed(a,b,ms){
+  const km = distance(a,b);
+  const h = ms / 3600000;
+  return km / h;
+}
+
+// DISTANCE km
+function distance(a,b){
+  const R = 6371;
+  const dLat = (b.lat-a.lat)*Math.PI/180;
+  const dLng = (b.lng-a.lng)*Math.PI/180;
+
+  const x =
+    Math.sin(dLat/2)**2 +
+    Math.cos(a.lat*Math.PI/180) *
+    Math.cos(b.lat*Math.PI/180) *
+    Math.sin(dLng/2)**2;
+
+  const c = 2*Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+  return R*c;
 }
 
 </script>
